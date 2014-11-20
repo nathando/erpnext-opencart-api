@@ -5,7 +5,7 @@ app_description = "App for connecting Opencart through APIs. Updating Products, 
 app_icon = "icon-book"
 app_color = "#589494"
 app_email = "nathan.dole@gmail.com"
-app_url = ""
+app_url = "https://github.com/nathando/erpnext-opencart-api.git"
 app_version = "0.0.1"
 
 # Includes in <head>
