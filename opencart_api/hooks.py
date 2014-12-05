@@ -8,6 +8,14 @@ app_email = "nathan.dole@gmail.com"
 app_url = "https://github.com/nathando/erpnext-opencart-api.git"
 app_version = "0.0.1"
 
+doc_events = {
+	"Item": {
+		"on_update": "opencart_api.items.oc_update_item",
+		"on_cancel": "opencart_api.items.oc_disable_item",
+		"on_trash": "opencart_api.items.oc_delete_item"
+	}
+}
+
 # Includes in <head>
 # ------------------
 

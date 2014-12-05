@@ -3,7 +3,9 @@ Author: Nathan Do
 Email: nathan.dole@gmail.com
 """
 import frappe, json, os, traceback
+import urllib2
 
+# ==================== Decorators for ERPNext APIs ======================
 def post_only(fn):
     def create_fn():
         if frappe.local.request.method=="POST":
@@ -55,3 +57,35 @@ def opencart_api(fn):
         except Exception as e:
             return {"status": -10, "error": str(e), "traceback": traceback.format_exc()}
     return opencart_fn
+
+#================ Decorator for others =====================
+# Handle all the failures callback - Send email to admins
+def handle_failure(error_status, error_msg, traceback=''):
+    pass
+
+def authenticated_opencart(fn):
+    def auth_oc_fn(item_doc, *args, **kw):
+        if (item_doc.get('sell_on_opencart') == 0):
+            return False
+        if (item_doc.get('opencart_site')):
+            site_doc = frappe.get_doc('Opencart Site', item_doc.get('opencart_site'))
+
+            # Verify the secret key
+            if (not site_doc.get('opencart_header_key') or not site_doc.get('opencart_header_value')):
+                handle_failure(kw.get('error_status', -1), 'Cannot get secret key')
+                return False
+
+            # Create header based on this
+            headers = {}
+            headers[site_doc.get('opencart_header_key')] = site_doc.get('opencart_header_value')
+            try:
+                return fn(item_doc, site_doc, headers, *args, **kw)
+            except frappe.PermissionError as e:
+                handle_failure(kw.get('error_status', -1), "Permission Error: " +  str(e))
+                return False
+            except Exception as e:
+                handle_failure(-10, "Unexpected exception: " +  str(e), traceback.format_exc())
+                return False
+        else:
+            handle_failure(-2, "Cannot find Opencart Site with name %s" %item_doc.get('opencart_site'))
+    return auth_oc_fn
