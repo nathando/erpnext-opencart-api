@@ -6,48 +6,63 @@ Interfacing with Open Cart API
 """
 from decorators import authenticated_opencart
 import frappe, json, os, traceback
-import httplib
+import httplib, urllib
 
 # Temp Map of APIs (Store it some where ?)
 API_MAP = {
     'products_add': {
-        'url': '/products/',
-        'method': 'POST'
+        'url': '/api/rest/products/',
+        'method': 'GET'
     }
 }
 
 # Construct the URL and get/post/put
 def request_oc_url (site_doc, headers, data, url_type):
     # Create new connection
-    conn = httplib.HTTPConnection(site_doc.get('server_base_url'))
+    try:
+        conn = httplib.HTTPConnection(site_doc.get('server_base_url'))
+        # Add Headers
+        headers["Content-type"] = "application/x-www-form-urlencoded"
+        headers["Accept"] = "text/plain"
 
-    # Add Headers
-    headers["Content-type"] = "application/x-www-form-urlencoded"
-    headers["Accept"] = "text/plain"
-    frappe.throw(headers)
+        # Encode data from a dict
+        data = urllib.urlencode(data)
 
-    # Encode data from a dict
-    data = urllib.urlencode(data)
+        # Request
+        conn.request(API_MAP[url_type]['method'], API_MAP[url_type]['url'], data, headers)
+        resp = conn.getresponse()
 
-    # Request
-    conn.request(API_MAP[url_type]['method'], API_MAP[url_type]['url'], data, header)
-    resp = conn.getresponse()
+        # Read response
+        content = resp.read()
+        conn.close()
 
-    # Validate response
-    frappe.thow(resp)
-
-    # Read response
-    content = resp.read()
-
-    conn.close()
-
+    except Exception as e:
+        frappe.throw('Error occured: ' + str(e))
+        frappe.get_logger().error("Unexpected exception: " +  str(e) + '. Traceback: ' + traceback.format_exc())
 
 # Insert Item
 @authenticated_opencart
 def oc_update_item (doc, site_doc, headers, method=None):
+
     data = {
-        'sku': doc.get('item_code'),
-        'name': doc.get('item_name')
+    	"model": doc.get('item_code'),
+    	"sku": doc.get('item_code'),
+    	"quantity" : doc.get('qty'),
+    	"price": doc.get('item_code'),
+    	"tax_class_id": "1",
+    	"manufacturer_id": "1",
+    	"sort_order": "1",
+    	"status": "1",
+        "product_store": "0",
+        "product_description": {
+    		"1":{
+    			"name": doc.get('item_name'),
+    			"meta_description" : "test product meta_description",
+    			"meta_keyword" : "test product meta_keyword",
+    			"description" : "test product description"
+    		}
+
+    	}
     }
     # if method in ['on_update', 'on_submit']:
     request_oc_url(site_doc, headers, data, 'products_add')
