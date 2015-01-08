@@ -15,6 +15,12 @@ doc_events = {
 	}
 }
 
+# Note on Fixtures:
+# csv fixtures files after being exported should be
+# manually edited to maintain correct order
+
+fixtures = ["Custom Field", "Custom Script"]
+
 # Includes in <head>
 # ------------------
 
