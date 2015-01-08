@@ -61,7 +61,7 @@ def opencart_api(fn):
 #================ Decorator for others =====================
 # Handle all the failures callback - Send email to admins
 def handle_failure(error_status, error_msg, traceback=''):
-    pass
+    frappe.throw('Error: %s'%error_msg )
 
 def authenticated_opencart(fn):
     def auth_oc_fn(item_doc, *args, **kw):
