@@ -18,6 +18,10 @@ API_MAP = {
     'products_update': {
         'url': '/api/rest/products/{id}',
         'method': 'PUT'
+    },
+    'products_delete': {
+        'url': '/api/rest/products/{id}',
+        'method': 'DELETE'
     }
 }
 
@@ -65,6 +69,9 @@ def get_quantity(doc, is_updating=False):
 # Insert Item
 @authenticated_opencart
 def oc_update_item (doc, site_doc, headers, method=None):
+    # Check method
+    if method != 'on_update':
+        frappe.throw('Unknown method %s'%method)
     #
     is_updating = doc.get(OC_PROD_ID) and doc.get(OC_PROD_ID) > 0
     # Get quantity
@@ -88,8 +95,6 @@ def oc_update_item (doc, site_doc, headers, method=None):
     		}
     	}
     }
-    if method != 'on_update':
-        frappe.throw('Unknown method %s'%method)
 
     # Push change to server
     response = request_oc_url(site_doc, headers, data, 'products_add') if not is_updating \
@@ -111,9 +116,24 @@ def oc_update_item (doc, site_doc, headers, method=None):
             doc.save()
         frappe.msgprint('Product successfully %s'%action)
 
-def oc_delete_item (doc, method=None):
-    pass
+@authenticated_opencart
+def oc_delete_item (doc, site_doc, headers, method=None):
+    # Check method
+    if method != 'on_trash':
+        frappe.throw('Unknown method %s'%method)
+    # Push delete on oc server
+    response = request_oc_url(site_doc, headers, {}, 'products_delete', url_params={'id': doc.get(OC_PROD_ID)})
+    # Parse json
+    try:
+        response_json = json.loads(response)
+    except Exception as e:
+        frappe.throw('Response has invalid format %s'%response)
 
+    # Not successful
+    if (not response_json.get('success')):
+        frappe.msgprint('Product not deleted on Opencart. Error: %s' %(response_json.get('error')))
+    else:
+        frappe.msgprint('Product successfully deleted on Opencart')
 
 # OC fields
 # product_description (array[ProductDescription], optional),
