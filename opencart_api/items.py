@@ -5,28 +5,15 @@ Description: Item/Product related functions
 Interfacing with Open Cart API
 """
 from decorators import authenticated_opencart
+from utils import get_child_groups
 import frappe, json, os, traceback
 import httplib, urllib
 
 # Temp Map of APIs (Store it some where ?)
 OC_PROD_ID = 'oc_product_id'
-API_MAP = {
-    'products_add': {
-        'url': '/api/rest/products/',
-        'method': 'POST'
-    },
-    'products_update': {
-        'url': '/api/rest/products/{id}',
-        'method': 'PUT'
-    },
-    'products_delete': {
-        'url': '/api/rest/products/{id}',
-        'method': 'DELETE'
-    }
-}
 
 # Construct the URL and get/post/put
-def request_oc_url (site_doc, headers, data, url_type, url_params=None):
+def request_oc_url (site_doc, headers, data, api_obj, url_params=None):
     # Create new connection
     try:
         conn = httplib.HTTPConnection(site_doc.get('server_base_url'))
@@ -37,13 +24,12 @@ def request_oc_url (site_doc, headers, data, url_type, url_params=None):
         # Encode data from a dict
         data = json.dumps(data)
 
-        # Map URL with url params
-        url = API_MAP[url_type]['url']
-        if url_params is not None:
-            url = url.format(**url_params)
+        # Get url and method from API Map
+        url = api_obj.get('api_url').format(**url_params)
+        method = api_obj.get('api_method')
 
         # Request
-        conn.request(API_MAP[url_type]['method'], url, data, headers)
+        conn.request(method, url, data, headers)
         resp = conn.getresponse()
 
         # Read response
@@ -68,7 +54,7 @@ def get_quantity(doc, is_updating=False):
 
 # Insert Item
 @authenticated_opencart
-def oc_update_item (doc, site_doc, headers, method=None):
+def oc_update_item (doc, site_doc, api_map, headers, method=None):
     # Check method
     if method != 'on_update':
         frappe.throw('Unknown method %s'%method)
@@ -95,10 +81,17 @@ def oc_update_item (doc, site_doc, headers, method=None):
     		}
     	}
     }
+    # Get API obj
+    api_obj = api_map.get('Product Add')
+    api_params = None
+    if is_updating:
+        api_obj = api_map.get('Product Edit')
+        api_params = {'id': doc.get(OC_PROD_ID)}
+    if (api_obj is None):
+        frappe.throw('Missing API URL for adding/updating product')
 
     # Push change to server
-    response = request_oc_url(site_doc, headers, data, 'products_add') if not is_updating \
-                else request_oc_url(site_doc, headers, data, 'products_update', url_params={'id': doc.get(OC_PROD_ID)})
+    response = request_oc_url(site_doc, headers, data, api_obj, url_params = api_params)
 
     # Parse json
     try:
@@ -117,12 +110,16 @@ def oc_update_item (doc, site_doc, headers, method=None):
         frappe.msgprint('Product successfully %s'%action)
 
 @authenticated_opencart
-def oc_delete_item (doc, site_doc, headers, method=None):
+def oc_delete_item (doc, site_doc, api_map, headers, method=None):
     # Check method
     if method != 'on_trash':
         frappe.throw('Unknown method %s'%method)
     # Push delete on oc server
-    response = request_oc_url(site_doc, headers, {}, 'products_delete', url_params={'id': doc.get(OC_PROD_ID)})
+    api_obj = api_map.get('Product Delete')
+    if (api_obj is None):
+        frappe.throw('Missing API URL for deleting product. Please check your OC Site\'s settings')
+    response = request_oc_url(site_doc, headers, {}, api_obj, url_params={'id': doc.get(OC_PROD_ID)})
+
     # Parse json
     try:
         response_json = json.loads(response)
@@ -134,6 +131,15 @@ def oc_delete_item (doc, site_doc, headers, method=None):
         frappe.msgprint('Product not deleted on Opencart. Error: %s' %(response_json.get('error')))
     else:
         frappe.msgprint('Product successfully deleted on Opencart')
+
+@authenticated_opencart
+def oc_validate (doc, site_doc, api_map, headers, method=None):
+    root_group = site_doc.get('root_item_group')
+    valid_groups = [x[0] for x in get_child_groups(root_group)]
+
+    # Check if current group is valid
+    if (doc.get('item_group') not in valid_groups):
+        raise Exception('To be able to sold on selected Ecommerce site, Item Group must be one of the followings: %s'%str(valid_groups))
 
 # OC fields
 # product_description (array[ProductDescription], optional),

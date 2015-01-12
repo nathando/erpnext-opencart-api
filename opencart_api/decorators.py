@@ -61,7 +61,15 @@ def opencart_api(fn):
 #================ Decorator for others =====================
 # Handle all the failures callback - Send email to admins
 def handle_failure(error_status, error_msg, traceback=''):
-    frappe.throw('Error: %s'%error_msg )
+    frappe.throw(error_msg)
+
+def get_api_map(site_doc):
+    if not site_doc.get('api_map'):
+        return None
+    api_map = {}
+    for api_map_item in site_doc.get('api_map'):
+        api_map[api_map_item.get('api_name')] = api_map_item
+    return api_map
 
 def authenticated_opencart(fn):
     def auth_oc_fn(item_doc, *args, **kw):
@@ -75,16 +83,22 @@ def authenticated_opencart(fn):
                 handle_failure(kw.get('error_status', -1), 'Cannot get secret key')
                 return False
 
+            #
+            api_map = get_api_map(site_doc)
+            if (not api_map):
+                handle_failure(kw.get('error_status', -1), 'Opencart site\'s API map has not been setup')
+                return False
+
             # Create header based on this
             headers = {}
             headers[site_doc.get('opencart_header_key')] = site_doc.get('opencart_header_value')
             try:
-                return fn(item_doc, site_doc, headers, *args, **kw)
+                return fn(item_doc, site_doc, api_map, headers, *args, **kw)
             except frappe.PermissionError as e:
                 handle_failure(kw.get('error_status', -1), "Permission Error: " +  str(e))
                 return False
             except Exception as e:
-                handle_failure(-10, "Unexpected exception: " +  str(e), traceback.format_exc())
+                handle_failure(-10, "Exception:\n" +  str(e), traceback.format_exc())
                 return False
         else:
             handle_failure(-2, "Cannot find Opencart Site with name %s" %item_doc.get('opencart_site'))

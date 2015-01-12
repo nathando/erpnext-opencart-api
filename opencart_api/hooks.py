@@ -1,3 +1,9 @@
+"""
+Author: Nathan Do
+Email: nathan.dole@gmail.com
+Description: Hooks for Opencart API app 
+"""
+
 app_name = "opencart_api"
 app_title = "Opencart API"
 app_publisher = "Nathan (Hoovix Consulting Pte. Ltd.)"
@@ -10,6 +16,7 @@ app_version = "0.0.1"
 
 doc_events = {
 	"Item": {
+		"validate": "opencart_api.items.oc_validate",
 		"on_update": "opencart_api.items.oc_update_item",
 		"on_trash": "opencart_api.items.oc_delete_item"
 	}
