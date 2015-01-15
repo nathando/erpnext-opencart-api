@@ -1,7 +1,7 @@
 """
 Author: Nathan Do
 Email: nathan.dole@gmail.com
-Description: Hooks for Opencart API app 
+Description: Hooks for Opencart API app
 """
 
 app_name = "opencart_api"
@@ -16,9 +16,14 @@ app_version = "0.0.1"
 
 doc_events = {
 	"Item": {
-		"validate": "opencart_api.items.oc_validate",
+		"validate": "opencart_api.items.oc_validate_item",
 		"on_update": "opencart_api.items.oc_update_item",
 		"on_trash": "opencart_api.items.oc_delete_item"
+	},
+	"Item Group": {
+		"validate": "opencart_api.item_groups.oc_validate_group",
+		"on_update": "opencart_api.item_groups.oc_update_group",
+		"on_trash": "opencart_api.item_groups.oc_delete_group"
 	}
 }
 
