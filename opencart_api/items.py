@@ -5,43 +5,12 @@ Description: Item/Product related functions
 Interfacing with Open Cart API
 """
 from decorators import authenticated_opencart
-from utils import get_child_groups
+from utils import request_oc_url
+from item_groups import get_child_groups
+from datetime import datetime
 import frappe, json, os, traceback
-import httplib, urllib
 
-# Temp Map of APIs (Store it some where ?)
 OC_PROD_ID = 'oc_product_id'
-
-# Construct the URL and get/post/put
-def request_oc_url (site_doc, headers, data, api_obj, url_params=None):
-    # Create new connection
-    try:
-        conn = httplib.HTTPConnection(site_doc.get('server_base_url'))
-        # Add Headers
-        headers["Content-type"] = "application/x-www-form-urlencoded"
-        headers["Accept"] = "text/plain"
-
-        # Encode data from a dict
-        data = json.dumps(data)
-
-        # Get url and method from API Map
-        url = api_obj.get('api_url').format(**url_params)
-        method = api_obj.get('api_method')
-
-        # Request
-        conn.request(method, url, data, headers)
-        resp = conn.getresponse()
-
-        # Read response
-        content = resp.read()
-        conn.close()
-
-        return content
-
-    except Exception as e:
-        frappe.throw('Error occured: ' + str(e))
-        frappe.get_logger().error("Unexpected exception: " +  str(e) + '. Traceback: ' + traceback.format_exc())
-
 
 # Get quantity if updating, otherwise return 0
 def get_quantity(doc, is_updating=False):
@@ -52,7 +21,7 @@ def get_quantity(doc, is_updating=False):
     else:
         return 0
 
-# Insert Item
+# Insert/Update Item
 @authenticated_opencart
 def oc_update_item (doc, site_doc, api_map, headers, method=None):
     # Check method
@@ -91,7 +60,7 @@ def oc_update_item (doc, site_doc, api_map, headers, method=None):
         frappe.throw('Missing API URL for adding/updating product')
 
     # Push change to server
-    response = request_oc_url(site_doc, headers, data, api_obj, url_params = api_params)
+    response = request_oc_url(site_doc.get('server_base_url'), headers, data, api_obj, url_params = api_params)
 
     # Parse json
     try:
@@ -118,7 +87,7 @@ def oc_delete_item (doc, site_doc, api_map, headers, method=None):
     api_obj = api_map.get('Product Delete')
     if (api_obj is None):
         frappe.throw('Missing API URL for deleting product. Please check your OC Site\'s settings')
-    response = request_oc_url(site_doc, headers, {}, api_obj, url_params={'id': doc.get(OC_PROD_ID)})
+    response = request_oc_url(site_doc.get('server_base_url'), headers, {}, api_obj, url_params={'id': doc.get(OC_PROD_ID)})
 
     # Parse json
     try:
@@ -133,10 +102,10 @@ def oc_delete_item (doc, site_doc, api_map, headers, method=None):
         frappe.msgprint('Product successfully deleted on Opencart')
 
 @authenticated_opencart
-def oc_validate (doc, site_doc, api_map, headers, method=None):
+def oc_validate_item (doc, site_doc, api_map, headers, method=None):
     root_group = site_doc.get('root_item_group')
     valid_groups = [x[0] for x in get_child_groups(root_group)]
-
+    valid_groups.append(root_group)
     # Check if current group is valid
     if (doc.get('item_group') not in valid_groups):
         raise Exception('To be able to sold on selected Ecommerce site, Item Group must be one of the followings: %s'%str(valid_groups))
