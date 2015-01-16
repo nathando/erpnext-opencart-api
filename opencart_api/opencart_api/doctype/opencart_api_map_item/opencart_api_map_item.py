@@ -7,3 +7,9 @@ from frappe.model.document import Document
 
 class OpencartAPIMapItem(Document):
 	pass
+
+def get_api_url(obj, url_params=None):
+	url = obj.get('api_url')
+	if (url_params is not None):
+		url = url.format(**url_params)
+	return url

@@ -3,8 +3,9 @@ Author: Nathan Do
 Email: nathan.dole@gmail.com
 Description: Utils for Opencart API app
 """
-import frappe, json, os, traceback
+import frappe, json, os, traceback, requests
 import httplib, urllib
+from opencart_api.doctype.opencart_api_map_item.opencart_api_map_item import get_api_url
 
 # Construct the URL and get/post/put
 def request_oc_url (server_base_url, headers, data, api_obj, url_params=None):
@@ -19,9 +20,7 @@ def request_oc_url (server_base_url, headers, data, api_obj, url_params=None):
         data = json.dumps(data)
 
         # Get url and method from API Map
-        url = api_obj.get('api_url')
-        if (url_params is not None):
-            url = url.format(**url_params)
+        url = get_api_url(api_obj, url_params)
         method = api_obj.get('api_method')
 
         # Request
@@ -37,3 +36,7 @@ def request_oc_url (server_base_url, headers, data, api_obj, url_params=None):
     except Exception as e:
         frappe.throw('Error occured: ' + str(e))
         frappe.get_logger().error("Unexpected exception: " +  str(e) + '. Traceback: ' + traceback.format_exc())
+
+def oc_upload_file(url, headers, data, file_path):
+    files = {'file': open(file_path, 'rb')}
+    return requests.post(url, files=files, headers=headers, data=data)

@@ -14,6 +14,16 @@ ERPNext app that aims to connect ERPNext with Opencart through building REST API
 ### Preparation
 ERPNext is a pretty robust system that can handle multiple ecommerce's data. Therefore, to reduce confusion, this plugin will try to separate those by User/Company/Item Group
 
+### Prerequisites
+Please install **requests** by running (either in your virtualenv or production server):  
+```
+pip install requests
+```
+### Notices
+For now, this plugin will use the [Opencart REST API](http://webshop.opencart-api.com/schema_v1.0/#!/order) to sync data. Unfortunately, it is not an opensource project. Currently we installed Opencart REST API into our opencart demo server [here](oc_erpnext.hoovix.com).
+
+If you want to contribute to the plugin, please let me know. I will give you the access to the server.
+
 
 ### Installation
 Following instructions [here](https://github.com/frappe/bench) to install Frappe and ERPNext  
@@ -25,7 +35,7 @@ bench get-app opencart_api https://github.com/nathando/erpnext-opencart-api.git
 App will create 2 extra **DocTypes**: Opencart Config and Opencart Site  
 There are some more preparation steps before trying:
 
-* Create one Item Group which will be the root for all Ecommerce sites (Let's say 'Opencart'). 
+* Create one Item Group which will be the root for all Ecommerce sites (Let's say 'Opencart').
 * Set this to be the Default Item Group in Opencart Config
 * Create a Role and named it **'Opencart Admin'**, and grant this role Permission to **Item**, **Item Group List** (Read, Write, Create Delete)
 * Create your Opencart Site's info by going to **Opencart Site** List
