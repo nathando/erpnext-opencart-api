@@ -14,20 +14,22 @@ app_email = "nathan.dole@gmail.com"
 app_url = "https://github.com/nathando/erpnext-opencart-api.git"
 app_version = "0.0.1"
 
+# include js, css files in header of desk.html
+app_include_css = "/assets/css/opencart_api.css"
+# app_include_js = "/assets/js/opencart_api.js"
+
 doc_events = {
 	"Item": {
 		"validate": "opencart_api.items.oc_validate_item",
-		"on_update": "opencart_api.items.oc_update_item",
 		"on_trash": "opencart_api.items.oc_delete_item"
 	},
 	"Item Group": {
 		"validate": "opencart_api.item_groups.oc_validate_group",
-		"on_update": "opencart_api.item_groups.oc_update_group",
 		"on_trash": "opencart_api.item_groups.oc_delete_group"
 	}
 }
 
-# Note on Fixtures:
+# Note on Fixtures (Nathan Do):
 # csv fixtures files after being exported should be
 # manually edited to maintain correct order
 

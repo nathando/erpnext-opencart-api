@@ -13,7 +13,7 @@
    "fieldtype": "Select", 
    "in_list_view": 1, 
    "label": "API Name", 
-   "options": "Product Add\nProduct Edit\nProduct Delete\nProduct Image\nProduct Quantity\nBulk Product Add\nBulk Product Edit\nCategory Add\nCategory Edit\nCategory Delete", 
+   "options": "Product Add\nProduct Edit\nProduct Delete\nProduct Image\nProduct Quantity\nBulk Product Add\nBulk Product Edit\nCategory Add\nCategory Edit\nCategory Delete\nCategory Image", 
    "permlevel": 0, 
    "precision": "", 
    "reqd": 1
@@ -65,7 +65,7 @@
  "is_submittable": 0, 
  "issingle": 0, 
  "istable": 0, 
- "modified": "2015-01-15 15:48:00.239935", 
+ "modified": "2015-01-16 17:55:35.031744", 
  "modified_by": "Administrator", 
  "module": "Opencart API", 
  "name": "Opencart API Map Item", 
