@@ -5,13 +5,14 @@ Description: Item/Product related functions
 Interfacing with Open Cart API
 """
 from decorators import authenticated_opencart
-from utils import request_oc_url, get_api_by_name
+from utils import request_oc_url, get_api_by_name, oc_requests
 from datetime import datetime, timedelta
 from frappe.utils import get_datetime
 import frappe, json, os, traceback
 import httplib, urllib
 
 OC_CAT_ID = 'opencart_category_id'
+OC_CAT_SYNC_BUFFER = 2 #seconds
 
 # Insert/Update Item Group (Category) real time when updating on form
 @authenticated_opencart
@@ -35,77 +36,63 @@ def oc_validate_group (doc, site_doc, api_map, headers, method=None):
         "column": "1"
     }
     # Get API obj
-    api_obj = api_map.get('Category Add')
-    api_params = None
-    if is_updating:
-        api_obj = api_map.get('Category Edit')
-        api_params = {'id': doc.get(OC_CAT_ID)}
-    if (api_obj is None):
-        frappe.msgprint('Missing API URL for adding/updating category. Please sync this with opencart again later')
-        return
+    api_name = 'Category Edit' if is_updating else 'Category Add'
+    api_params = {'id': doc.get(OC_CAT_ID)} if is_updating else None
 
     # Push change to server
-    response = request_oc_url(site_doc.get('server_base_url'), headers, data, api_obj, url_params = api_params)
-    if (response is None):
-        return
-    # Parse json
-    try:
-        response_json = json.loads(response)
-    except Exception as e:
-        frappe.msgprint('Response has invalid format %s. Please sync this with opencart again later'%response)
-        return
-
-    # Check success
-    action = 'updated' if is_updating else 'added'
-    if (not response_json.get('success')):
-        frappe.msgprint('Category not %s. Error: %s' %(action, response_json.get('error')))
-    else:
-        if (not is_updating):
-            doc.update({OC_CAT_ID: response_json.get('category_id')})
-        doc.opencart_last_sync= datetime.now()
-        frappe.msgprint('Category successfully %s'%action)
+    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, api_name, \
+        url_params = api_params, data=data)
+    if res:
+        # Check success
+        action = 'updated' if is_updating else 'added'
+        if (not res.get('success')):
+            frappe.msgprint('Category not %s. Error: %s' %(action, res.get('error')))
+        else:
+            if (not is_updating):
+                doc.update({OC_CAT_ID: res.get('category_id')})
+            doc.opencart_last_sync= datetime.now()
+            frappe.msgprint('Category successfully %s'%action)
 
 
 # Delete Item Group (Category)
 @authenticated_opencart
 def oc_delete_group (doc, site_doc, api_map, headers, method=None):
     # Delete are not allow if cannot connect to opencart
-    # Push delete on oc server
-    api_obj = api_map.get('Category Delete')
-    if (api_obj is None):
-        frappe.throw('Missing API URL for deleting category. Please check your OC Site\'s settings')
-    response = request_oc_url(site_doc.get('server_base_url'), headers, {}, api_obj, url_params={'id': doc.get(OC_CAT_ID)}, throw_error=True)
-    if (response is None):
-        return
-    # Parse json
-    try:
-        response_json = json.loads(response)
-    except Exception as e:
-        frappe.throw('Response has invalid format %s. Please sync this with opencart again later'%response)
-
-    # Not successful
-    if (not response_json.get('success')):
-        frappe.msgprint('Category not deleted on Opencart. Error: %s' %(response_json.get('error')))
-    else:
-        frappe.msgprint('Category successfully deleted on Opencart')
+    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, 'Category Delete', \
+            url_params={'id': doc.get(OC_CAT_ID)}, throw_error=True)
+    if res:
+        # Not successful
+        if (not res.get('success')):
+            frappe.msgprint('Category not deleted on Opencart. Error: %s' %(res.get('error')))
+        else:
+            frappe.msgprint('Category successfully deleted on Opencart')
 
 # Get child group
 @frappe.whitelist()
 def get_child_groups(item_group_name):
     item_group = frappe.get_doc("Item Group", item_group_name)
-    return frappe.db.sql("""select name, parent_item_group, opencart_category_id, opencart_last_sync, modified from `tabItem Group` where lft>%(lft)s and rgt<=%(rgt)s order by lft asc""", {"lft": item_group.lft, "rgt": item_group.rgt})
+    groups = frappe.db.sql("""select name, parent_item_group, opencart_category_id, opencart_last_sync, modified, \
+        if(opencart_last_sync + INTERVAL %(buffer)s SECOND > modified, 1, 0) as updated \
+        from `tabItem Group` where lft>%(lft)s and rgt<=%(rgt)s order by lft asc""", {"lft": item_group.lft, "rgt": item_group.rgt, "buffer": OC_CAT_SYNC_BUFFER})
+    return [group+(("updated", "Updated") if group[5]==1 else ("not-updated", "Not Updated")) for group in groups]
 
 # Manually sync children groups
 @frappe.whitelist()
 def sync_child_groups(item_group_name, site_name, server_base_url, api_map, header_key, header_value):
+    #
     item_group = frappe.get_doc("Item Group", item_group_name)
+
+    # Check if any is not updated
+    count = frappe.db.sql("""select count(*) from \
+        (select if(opencart_last_sync + INTERVAL %(buffer)s SECOND > modified, 1, 0) as updated \
+        from `tabItem Group` where lft>%(lft)s and rgt<=%(rgt)s) as cat_tbl where cat_tbl.updated=0""", {"lft": item_group.lft, "rgt": item_group.rgt, "buffer": OC_CAT_SYNC_BUFFER})
+    if (count[0][0]==0):
+        frappe.throw('All items groups are up to date')
+
+    #
     site_doc = frappe.get_doc("Opencart Site", site_name)
-    field_dict = ["name", ]
-    filters_dict = [
-        ["Item Group", "lft", ">", item_group.lft],
-        ["Item Group", "rgt", "<=", item_group.rgt]
-    ]
-    groups = (frappe.get_list("Item Group", filters=filters_dict, docstatus="1", order_by="lft"))
+    groups = frappe.db.sql("""select name, if(opencart_last_sync + INTERVAL %(buffer)s SECOND > modified, 1, 0) as updated \
+        from `tabItem Group` where lft>%(lft)s and rgt<=%(rgt)s order by lft asc""", {"lft": item_group.lft, "rgt": item_group.rgt, "buffer": OC_CAT_SYNC_BUFFER})
     #
     results = {}
     results_list = []
@@ -113,15 +100,19 @@ def sync_child_groups(item_group_name, site_name, server_base_url, api_map, head
     headers = {}
     headers[header_key] = header_value
     # Load api map
-    api_map = json.loads(api_map)
     update_count = 0
     add_count = 0
     # Loop through group and update
     for group in groups:
-        group_doc = frappe.get_doc("Item Group", group.get('name'))
-        extra_cls = ""
-        # Check if it synced already 2 sec buffer
-        if (not group_doc.get('opencart_last_sync') or get_datetime(group_doc.get('modified')) > get_datetime(group_doc.get('opencart_last_sync'))+ timedelta(0,2)):
+        group_name, group_updated = group
+        group_doc = frappe.get_doc("Item Group", group_name)
+
+        # Check if it synced already 2 sec buffer.
+        # Because we save using code the modified get updated after last_sync time
+        if (group_updated):
+            extras = (1, 'updated', 'Updated')
+        else:
+            extras = (0, 'not-updated', 'Not Updated')
             # Parent category
             parent_id = "0"
             if group_doc.get('parent_item_group')!=item_group_name:
@@ -148,51 +139,38 @@ def sync_child_groups(item_group_name, site_name, server_base_url, api_map, head
             }
 
             # Get API obj
-            if is_updating:
-                api_obj = get_api_by_name(api_map, 'Category Edit')
-                api_params = {'id': group_doc.get(OC_CAT_ID)}
-            else:
-                api_obj = get_api_by_name(api_map, 'Category Add')
-                api_params = None
-
-            if (api_obj is None):
-                frappe.throw('Missing API URL for adding/updating product')
+            api_name = 'Category Edit' if is_updating else 'Category Add'
+            api_params = {'id': group_doc.get(OC_CAT_ID)} if is_updating else None
 
             # Push change to server
-            response = request_oc_url(server_base_url, headers, data, api_obj, url_params = api_params)
-
-            # Parse json
-            try:
-                response_json = json.loads(response)
-            except Exception as e:
-                frappe.throw('Response has invalid format %s'%response)
-
-            # Handle response
-            if (response_json.get('success')==True):
-                group.update({
-                    "sell_on_opencart": True,
-                    "opencart_site": site_name,
-                    "opencart_last_sync": datetime.now()
-                })
-                if not group_doc.opencart_category_id:
-                    group.update({"opencart_category_id": response_json.get('category_id')})
-                group_doc.update(group)
-                group_doc.ignore_validate=True
-                group_doc.save()
-                # Add count
-                if (is_updating):
-                    update_count+=1
-                    extra_cls = 'just-updated'
-                else:
-                    add_count+=1
-                    extra_cls = 'just-added'
+            res = oc_requests(server_base_url, headers, api_map, api_name, url_params=api_params, data=data)
+            if res:
+                # Handle response
+                if (res.get('success')==True):
+                    updating_props = {
+                        "sell_on_opencart": True,
+                        "opencart_site": site_name,
+                        "opencart_last_sync": datetime.now()
+                    }
+                    if not group_doc.opencart_category_id:
+                        updating_props.update({"opencart_category_id": res.get('category_id')})
+                    group_doc.update(updating_props)
+                    group_doc.ignore_validate=True
+                    group_doc.save()
+                    # Add count
+                    if (is_updating):
+                        update_count+=1
+                        extras = (group_updated, 'just-updated', 'Just Updated')
+                    else:
+                        add_count+=1
+                        extras = (group_updated, 'just-added', 'Just Added')
             # Update images as well, optional
             sync_group_image_handle (group_doc, site_doc, api_map, headers)
 
         # Append results
-        results_list.append([group_doc.get('name'), group_doc.get('parent_item_group'), \
+        results_list.append((group_doc.get('name'), group_doc.get('parent_item_group'), \
          group_doc.get('opencart_category_id'), group_doc.get_formatted('opencart_last_sync'), \
-         group_doc.get('modified'), extra_cls])
+         group_doc.get('modified'))+extras)
 
     results = {
         'add_count': add_count,
@@ -204,42 +182,43 @@ def sync_child_groups(item_group_name, site_name, server_base_url, api_map, head
 
 # Sync item's primary image
 def sync_group_image_handle (doc, site_doc, api_map, headers):
-    # Get API obj
-    api_obj = get_api_by_name(api_map, 'Category Image')
-    if (not api_obj):
-        return
-
-    # Check if we have image
-    if (not doc.get('oc_image') or doc.get('oc_image')==''):
-        return
-
-    # Let's get the file
-    image_file_data = frappe.get_doc("File Data", {
-		"file_url": doc.get('oc_image'),
-		"attached_to_doctype": "Item Group",
-		"attached_to_name": doc.get('name')
-	})
-    if (image_file_data is None):
-        return
-
-    file_path = get_files_path() + '/' + image_file_data.get('file_name')
-
-    # Push image onto oc server
-    url = 'http://'+site_doc.get('server_base_url') + get_api_url(api_obj, {'id': doc.get(OC_PROD_ID)})
-    try:
-        response = oc_upload_file(url, headers, {}, file_path)
-        if (response.status_code!=200):
-            pass
-        else:
-            res = json.loads(response.text)
-            if (res.get('success')):
-                doc.last_sync_image = datetime.now()
-                doc.save()
-                return doc.last_sync_image
-            else:
-                pass
-    except Exception as e:
-        pass
+    pass
+    # # Get API obj
+    # api_obj = get_api_by_name(api_map, 'Category Image')
+    # if (not api_obj):
+    #     return
+    #
+    # # Check if we have image
+    # if (not doc.get('oc_image') or doc.get('oc_image')==''):
+    #     return
+    #
+    # # Let's get the file
+    # image_file_data = frappe.get_doc("File Data", {
+	# 	"file_url": doc.get('oc_image'),
+	# 	"attached_to_doctype": "Item Group",
+	# 	"attached_to_name": doc.get('name')
+	# })
+    # if (image_file_data is None):
+    #     return
+    #
+    # file_path = get_files_path() + '/' + image_file_data.get('file_name')
+    #
+    # # Push image onto oc server
+    # url = 'http://'+site_doc.get('server_base_url') + get_api_url(api_obj, {'id': doc.get(OC_PROD_ID)})
+    # try:
+    #     response = oc_upload_file(url, headers, {}, file_path)
+    #     if (response.status_code!=200):
+    #         pass
+    #     else:
+    #         res = json.loads(response.text)
+    #         if (res.get('success')):
+    #             doc.last_sync_image = datetime.now()
+    #             doc.save()
+    #             return doc.last_sync_image
+    #         else:
+    #             pass
+    # except Exception as e:
+    #     pass
 
 # Opencart API
 # Category {

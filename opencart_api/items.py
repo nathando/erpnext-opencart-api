@@ -5,7 +5,7 @@ Description: Item/Product related functions
 Interfacing with Open Cart API
 """
 from decorators import authenticated_opencart
-from utils import request_oc_url, oc_upload_file, get_api_by_name
+from utils import oc_requests
 from item_groups import get_child_groups
 from datetime import datetime
 from frappe.utils import get_files_path, get_path, get_site_path
@@ -72,111 +72,74 @@ def oc_validate_item (doc, site_doc, api_map, headers, method=None):
     	"manufacturer_id": "1"
     }
     # Get API obj
-    api_obj = api_map.get('Product Add')
-    api_params = None
-    if is_updating:
-        api_obj = api_map.get('Product Edit')
-        api_params = {'id': doc.get(OC_PROD_ID)}
-    if (api_obj is None):
-        frappe.msgprint('Missing API URL for adding/updating product. Please sync this with opencart again later')
-        return
+    api_name = 'Product Edit' if is_updating else 'Product Add'
+    api_params = {'id': doc.get(OC_PROD_ID)} if is_updating else None
 
     # Push change to server
-    response = request_oc_url(site_doc.get('server_base_url'), headers, data, api_obj, url_params = api_params)
-    if (response is None):
-        return
-    # Parse json
-    try:
-        response_json = json.loads(response)
-    except Exception as e:
-        frappe.msgprint('Response has invalid format %s. Please sync this with opencart again later'%response)
-        return
+    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, api_name, data=data, url_params = api_params)
+    if res:
+        # Check success
+        action = 'updated' if is_updating else 'added'
+        if (not res.get('success')):
+            frappe.msgprint('Product not %s on Opencart. Error: %s' %(action, res.get('error')))
+        else:
+            doc.update({'last_sync_oc': datetime.now()})
+            if (not is_updating):
+                doc.update({OC_PROD_ID: res.get('product_id')})
+            frappe.msgprint('Product successfully %s on Opencart'%action)
 
-    # Check success
-    action = 'updated' if is_updating else 'added'
-    if (not response_json.get('success')):
-        frappe.msgprint('Product not %s on Opencart. Error: %s' %(action, response_json.get('error')))
-    else:
-        doc.update({'last_sync_oc': datetime.now()})
-        if (not is_updating):
-            doc.update({OC_PROD_ID: response_json.get('product_id')})
-        frappe.msgprint('Product successfully %s'%action)
-
+# Delete real time with opencart
 @authenticated_opencart
 def oc_delete_item (doc, site_doc, api_map, headers, method=None):
     # Push delete on oc server
-    api_obj = api_map.get('Product Delete')
-    if (api_obj is None):
-        frappe.throw('Missing API URL for deleting product. Please check your OC Site\'s settings')
-    response = request_oc_url(site_doc.get('server_base_url'), headers, {}, api_obj, url_params={'id': doc.get(OC_PROD_ID)}, throw_error=True)
-
-    # Parse json
-    try:
-        response_json = json.loads(response)
-    except Exception as e:
-        frappe.throw('Response has invalid format %s'%response)
-
-    # Not successful
-    if (not response_json.get('success')):
-        frappe.msgprint('Product not deleted on Opencart. Error: %s' %(response_json.get('error')))
-    else:
-        frappe.msgprint('Product successfully deleted on Opencart')
+    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, 'Product Delete', url_params={'id': doc.get(OC_PROD_ID)}, throw_error=True)
+    if res:
+        # Not successful
+        if (not res.get('success')):
+            frappe.msgprint('Product not deleted on Opencart. Error: %s' %(res.get('error')))
+        else:
+            frappe.msgprint('Product successfully deleted on Opencart')
 
 # Sync item's primary image
 @authenticated_opencart
-def sync_item_image_handle (doc, site_doc, api_map, headers):
-    # Get API obj
-    api_obj = api_map.get('Product Image')
-    if (not api_obj):
-        frappe.throw('Missing API URL for adding/updating product\'s image')
-
+def sync_item_image_handle (doc, site_doc, api_map, headers, image_path=None):
     # Check if we have image
-    if (not doc.get('image') or doc.get('image')==''):
+    if (not image_path or image_path==''):
         frappe.throw('There is no image to sync')
+
     # Let's get the file
     image_file_data = frappe.get_doc("File Data", {
-		"file_url": doc.get('image'),
+		"file_url": image_path,
 		"attached_to_doctype": "Item",
 		"attached_to_name": doc.get('name')
 	})
     if (image_file_data is None):
-        frappe.throw('Cannot find image with path %s' %doc.get('image'))
-
+        frappe.throw('Cannot find image with path %s' %image_path)
     file_path = get_files_path() + '/' + image_file_data.get('file_name')
 
     # Push image onto oc server
-    url = 'http://'+site_doc.get('server_base_url') + get_api_url(api_obj, {'id': doc.get(OC_PROD_ID)})
-    try:
-        response = oc_upload_file(url, headers, {}, file_path)
-        if (response.status_code!=200):
-            frappe.throw('Error occur when posting image to opencart. Status code: %s'%str(response.status_code))
+    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, 'Product Image', \
+        file_path=file_path, url_params={'id': doc.get(OC_PROD_ID)}, throw_error=True)
+    if res:
+        if (res.get('success')):
+            doc.update({'last_sync_image': datetime.now()})
+            frappe.msgprint('Successfully updated product\'s image on Opencart')
+            return doc.last_sync_image
         else:
-            res = json.loads(response.text)
-            if (res.get('success')):
-                doc.update({'last_sync_image': datetime.now()})
-                return doc.last_sync_image
-            else:
-                frappe.throw('Unknown error posting image. Image not updated')
-    except Exception as e:
-        frappe.throw('Error occur when posting image to opencart. Exception: %s'%str(e))
+            frappe.throw('Unknown error posting image. Image not updated %s' %json.dumps(res))
 
 # Sync item's image
 @frappe.whitelist()
-def sync_item_image(item_name):
+def sync_item_image(item_name, image_path):
     item_doc = frappe.get_doc("Item", item_name)
     # Double check if the item is just local
     if item_doc is None:
         frappe.throw("Cannot find item with name %s, or item has not been saved" %item_name)
-    return sync_item_image_handle(item_doc)
+    return sync_item_image_handle(item_doc, image_path=image_path)
 
 # Manually sync items which belongs to a opencart site
 @frappe.whitelist()
 def sync_all_items(server_base_url, api_map, header_key, header_value):
-    # Get API obj
-    api_map = json.loads(api_map)
-    api_obj = get_api_by_name(api_map, 'Bulk Product Edit')
-    if (api_obj is None):
-        frappe.throw('Missing API URL for bulk updating/adding product. Please sync this with opencart again later')
     # Header
     headers = {}
     headers[header_key] = header_value
@@ -216,24 +179,16 @@ def sync_all_items(server_base_url, api_map, header_key, header_value):
         })
         results.append([item[2], item[3], item[1], item[10], item[11]])
     # Bulk Update to server
-    response = request_oc_url(server_base_url, headers, data, api_obj)
-    if (response is None):
-        return
-    # Parse json
-    try:
-        response_json = json.loads(response)
-    except Exception as e:
-        frappe.msgprint('Response has invalid format %s. Please sync this with opencart again later'%response)
-        return
-
-    # Success ?
+    res = oc_requests(server_base_url, headers, api_map, 'Bulk Product Edit', data=data)
     success = False
-    if (not response_json.get('success')):
-        frappe.msgprint('Some product not updated on Opencart. Error: %s' %(response_json.get('error')))
-    else:
-        frappe.db.sql("""update `tabItem` set last_sync_oc = Now() where name in (%s)""" %(','.join(names)))
-        frappe.msgprint('%d Product(s) successfully updated to Opencart site' %len(items))
-        success = True
+    if res:
+        # Success ?
+        if (not res.get('success')):
+            frappe.msgprint('Some product not updated on Opencart. Error: %s' %(res.get('error')))
+        else:
+            frappe.db.sql("""update `tabItem` set last_sync_oc = Now() where name in (%s)""" %(','.join(names)))
+            frappe.msgprint('%d Product(s) successfully updated to Opencart site' %len(items))
+            success = True
     return {
         'results': results,
         'success': success
