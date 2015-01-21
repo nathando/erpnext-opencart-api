@@ -5,7 +5,7 @@ Description: Item/Product related functions
 Interfacing with Open Cart API
 """
 from decorators import authenticated_opencart
-from utils import oc_requests
+from utils import oc_requests, sync_info
 from item_groups import get_child_groups
 from datetime import datetime
 from frappe.utils import get_files_path, get_path, get_site_path
@@ -92,7 +92,7 @@ def oc_validate_item (doc, site_doc, api_map, headers, method=None):
 @authenticated_opencart
 def oc_delete_item (doc, site_doc, api_map, headers, method=None):
     # Push delete on oc server
-    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, 'Product Delete', url_params={'id': doc.get(OC_PROD_ID)}, throw_error=True)
+    res = oc_requests(site_doc.get('server_base_url'), headers, api_map, 'Product Delete', url_params={'id': doc.get(OC_PROD_ID)}, stop=True)
     if res:
         # Not successful
         if (not res.get('success')):
@@ -139,60 +139,64 @@ def sync_item_image(item_name, image_path):
 
 # Manually sync items which belongs to a opencart site
 @frappe.whitelist()
-def sync_all_items(server_base_url, api_map, header_key, header_value):
+def sync_all_items(server_base_url, api_map, header_key, header_value, silent=False):
     # Header
     headers = {}
     headers[header_key] = header_value
 
     # Query for items that has synced time < modified time
     items = frappe.db.sql("""select name, oc_product_id, item_code, item_name, description, \
-    oc_meta_keyword, oc_meta_description, oc_price, oc_enable, item_group, modified, last_sync_oc  from `tabItem` where last_sync_oc<modified and oc_product_id is not null""")
+    oc_meta_keyword, oc_meta_description, oc_price, oc_enable, item_group, modified, last_sync_oc from `tabItem` where last_sync_oc<modified and oc_product_id is not null""")
 
-    #
-    if (len(items)==0):
-        frappe.throw('All items are up to date')
-    data = []
-    names = []
+    # Init results
     results = []
-    for item in items:
-        names.append("'"+item[0]+"'")
-        data.append ({
-            "product_id": item[1],
-        	"model": item[2],
-        	"sku": item[2],
-        	"price": item[7] or 0,
-        	"status": item[8],
-            "product_store": ["0"],
-            "product_category": [item[9]],
-            "product_description": {
-        		"1":{
-        			"name": item[3],
-        			"meta_keyword" : item[5] or '',
-                    "meta_description" : item[6] or '',
-        			"description" : item[4] or ''
-        		}
-        	},
-            # Irrelevant
-            "sort_order": "1",
-        	"tax_class_id": "1",
-        	"manufacturer_id": "1"
-        })
-        results.append([item[2], item[3], item[1], item[10], item[11]])
-    # Bulk Update to server
-    res = oc_requests(server_base_url, headers, api_map, 'Bulk Product Edit', data=data)
+    logs = []
     success = False
-    if res:
-        # Success ?
-        if (not res.get('success')):
-            frappe.msgprint('Some product not updated on Opencart. Error: %s' %(res.get('error')))
-        else:
-            frappe.db.sql("""update `tabItem` set last_sync_oc = Now() where name in (%s)""" %(','.join(names)))
-            frappe.msgprint('%d Product(s) successfully updated to Opencart site' %len(items))
-            success = True
+    if (len(items)==0):
+        sync_info(logs, 'All items are up to date', stop=True, silent=silent)
+    else:
+        data = []
+        names = []
+        for item in items:
+            names.append("'"+item[0]+"'")
+            data.append ({
+                "product_id": item[1],
+            	"model": item[2],
+            	"sku": item[2],
+            	"price": item[7] or 0,
+            	"status": item[8],
+                "product_store": ["0"],
+                "product_category": [item[9]],
+                "product_description": {
+            		"1":{
+            			"name": item[3],
+            			"meta_keyword" : item[5] or '',
+                        "meta_description" : item[6] or '',
+            			"description" : item[4] or ''
+            		}
+            	},
+                # Irrelevant
+                "sort_order": "1",
+            	"tax_class_id": "1",
+            	"manufacturer_id": "1"
+            })
+            results.append([item[2], item[3], item[1], item[10], item[11]])
+        # Bulk Update to server
+        res = oc_requests(server_base_url, headers, api_map, 'Bulk Product Edit', data=data, stop=False, logs=logs, silent=silent)
+        if res:
+            # Success ?
+            if (not res.get('success')):
+                sync_info(logs, 'Some product not updated on Opencart. Error: %s' %(res.get('error')), stop=False, silent=silent)
+            else:
+                frappe.db.sql("""update `tabItem` set last_sync_oc = Now() where name in (%s)""" %(','.join(names)))
+                sync_info(logs, '%d Product(s) successfully updated to Opencart site' %len(items), stop=False, silent=silent)
+                success = True
     return {
         'results': results,
-        'success': success
+        'success': success,
+        'logs': logs
     }
+
 
 # OC fields
 # product_description (array[ProductDescription], optional),

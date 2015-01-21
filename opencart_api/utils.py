@@ -5,8 +5,22 @@ Description: Utils for Opencart API app
 """
 import frappe, json, os, traceback, requests
 import httplib, urllib
+from datetime import datetime
 from opencart_api.doctype.opencart_api_map_item.opencart_api_map_item import get_api_url
 
+# Sync Log format
+def sync_log_create(error, message):
+    return "[%s] %s: %s"%(datetime.now().strftime("%d-%b-%y %H:%M:%S"), "ERR" if error else "INF", message)
+
+# Report sync error/info, depend on whether silent flag is set
+def sync_info(logs, message, error=False, stop=False, silent=False):
+    logs.append(sync_log_create(error, message))
+    # Show ui
+    if not silent:
+        prompt_fn = frappe.throw if stop else frappe.msgprint
+        prompt_fn(message)
+
+# Retrieve the api object from api map list
 def get_api_by_name(api_map, name):
     # return next((obj for obj in api_map if obj.get('name')==name), None)
     for obj in api_map:
@@ -14,47 +28,18 @@ def get_api_by_name(api_map, name):
             return obj
     return None
 
-# Construct the URL and get/post/put
-def request_oc_url (server_base_url, headers, data, api_obj, url_params=None, throw_error=False):
-    # Create new connection
-    try:
-        conn = httplib.HTTPConnection(server_base_url)
-        # Add Headers
-        headers["Content-type"] = "application/x-www-form-urlencoded"
-        headers["Accept"] = "text/plain"
-
-        # Encode data from a dict
-        data = json.dumps(data)
-
-        # Get url and method from API Map
-        url = get_api_url(api_obj, url_params)
-        method = api_obj.get('api_method')
-
-        # Request
-        conn.request(method, url, data, headers)
-        resp = conn.getresponse()
-
-        # Read response
-        content = resp.read()
-        conn.close()
-
-        return content
-
-    except Exception as e:
-        if (throw_error):
-            frappe.throw('Error occured: %s. Please sync this with opencart again later' % str(e))
-        else:
-            frappe.msgprint('Error occured: %s. Please sync this with opencart again later' % str(e))
-        frappe.get_logger().error("Unexpected exception: " +  str(e) + '. Traceback: ' + traceback.format_exc())
-
-def oc_requests(server_base_url, headers, api_map, api_name, url_params=None, file_path=None, throw_error=False, data=None):
+# Handle all request to oc
+def oc_requests(server_base_url, headers, api_map, api_name, url_params=None, file_path=None, stop=False, silent=False, logs=[], data=None):
     try:
         # Validate
         if isinstance(api_map, basestring):
             api_map = json.loads(api_map)
-            api_obj = get_api_by_name(api_map, api_name)
-        else:
+
+        if isinstance(api_map, dict):
             api_obj = api_map.get(api_name)
+        elif isinstance(api_map, list):
+            api_obj = get_api_by_name(api_map, api_name)
+
         if (api_obj is None):
             frappe.msgprint('Missing API URL: %s. Please sync this with opencart again later')
             return None
@@ -87,15 +72,13 @@ def oc_requests(server_base_url, headers, api_map, api_name, url_params=None, fi
             try:
                 return json.loads(response.text)
             except Exception as e:
-                frappe.msgprint('Response has invalid format %s. Please sync this with opencart again later'%response)
-        return None
+                sync_info(logs, 'Response has invalid format %s. Please sync this with opencart again later!'%response, stop=stop, silent=silent, error=True)
 
+    except requests.ConnectionError:
+        sync_info(logs, 'Cannot connect to Opencart Site. Please sync this with opencart again later!', stop=stop, silent=silent, error=True)
     except Exception as e:
-        if (throw_error):
-            frappe.throw('Error occured: %s. Please sync this with opencart again later' % str(e))
-        else:
-            frappe.msgprint('Error occured: %s. Please sync this with opencart again later' % str(e))
-        frappe.get_logger().error("Unexpected exception: " +  str(e) + '. Traceback: ' + traceback.format_exc())
+        sync_info(logs, 'Unknown error: %s. Please sync this with opencart again later!'%str(e), stop=stop, silent=silent, error=True)
+    return None
 
 def oc_upload_file(url, headers, data, file_path):
     files = {'file': open(file_path, 'rb')}

@@ -31,9 +31,18 @@ doc_events = {
 
 # Note on Fixtures (Nathan Do):
 # csv fixtures files after being exported should be
-# manually edited to maintain correct order
+# manually edited to maintain correct order as of ERPNext 4.9.2
 
 fixtures = ["Custom Field", "Custom Script"]
+
+scheduler_events = {
+	# "all": [
+	# 	"opencart_api.tasks.all"
+	# ],
+	"daily": [
+		"opencart_api.tasks.daily"
+	]
+}
 
 # Includes in <head>
 # ------------------

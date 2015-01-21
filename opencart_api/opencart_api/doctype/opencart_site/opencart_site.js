@@ -162,3 +162,16 @@ cur_frm.cscript.sync_item_with_oc_site = function(doc, dt, dn) {
         }
     });
 }
+
+// Just to test schedule
+// test_schedule = function() {
+//     frappe.call({
+//         type: "GET",
+//         args: {
+//             cmd: "opencart_api.tasks.daily",
+//         },
+//         callback: function(data) {
+//             console.log(data);
+//         }
+//     })
+// }
