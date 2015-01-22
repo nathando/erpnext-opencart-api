@@ -7,22 +7,14 @@ Interfacing with Open Cart API
 from decorators import authenticated_opencart
 from utils import oc_requests, sync_info
 from item_groups import get_child_groups
+from item_qty import get_item_qty
 from datetime import datetime
-from frappe.utils import get_files_path, get_path, get_site_path
+from frappe.utils import get_files_path, flt, cint
 import frappe, json, os, traceback, base64
 from opencart_api.doctype.opencart_api_map_item.opencart_api_map_item import get_api_url
 
 OC_PROD_ID = 'oc_product_id'
 OC_CAT_ID = 'opencart_category_id'
-
-# Get quantity if updating, otherwise return 0
-def get_quantity(doc, is_updating=False):
-    # Updating, return real qty
-    if (is_updating):
-        return 0
-    # Adding, return 0
-    else:
-        return 0
 
 # Insert/Update Item
 @authenticated_opencart
@@ -50,12 +42,13 @@ def oc_validate_item (doc, site_doc, api_map, headers, method=None):
     is_updating = doc.get(OC_PROD_ID) and doc.get(OC_PROD_ID) > 0
 
     # Get quantity
-    qty = get_quantity(doc, is_updating=is_updating)
+    qty = get_item_qty(doc)
     data = {
     	"model": doc.get('item_code'),
     	"sku": doc.get('item_code'),
     	"price": doc.get('oc_price'),
     	"status": doc.get('oc_enable'),
+        "quantity": str(cint(qty)),
         "product_store": ["0"],
         "product_category": product_categories,
         "product_description": {
@@ -87,6 +80,7 @@ def oc_validate_item (doc, site_doc, api_map, headers, method=None):
             if (not is_updating):
                 doc.update({OC_PROD_ID: res.get('product_id')})
             frappe.msgprint('Product successfully %s on Opencart'%action)
+
 
 # Delete real time with opencart
 @authenticated_opencart
@@ -196,7 +190,6 @@ def sync_all_items(server_base_url, api_map, header_key, header_value, silent=Fa
         'success': success,
         'logs': logs
     }
-
 
 # OC fields
 # product_description (array[ProductDescription], optional),

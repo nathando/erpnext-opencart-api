@@ -37,7 +37,7 @@ def authenticated_api(fn):
                 return {"status": -10, "error": str(e), "traceback": traceback.format_exc()}
     return auth_fn
 
-def opencart_api(fn):
+def oc_api(fn):
     def opencart_fn(*args, **kw):
         user = frappe.local.session.get('user', "Guest")
         # Get the opencart config

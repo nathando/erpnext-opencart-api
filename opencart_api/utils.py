@@ -13,7 +13,12 @@ def sync_log_create(error, message):
     return "[%s] %s: %s"%(datetime.now().strftime("%d-%b-%y %H:%M:%S"), "ERR" if error else "INF", message)
 
 # Report sync error/info, depend on whether silent flag is set
-def sync_info(logs, message, error=False, stop=False, silent=False):
+""" Params:
+    error: Log as error ?
+    silent: Include a prompt ?
+    stop: Should a prompt stop all execution ?
+"""
+def sync_info(logs, message, error=False, silent=False, stop=False):
     logs.append(sync_log_create(error, message))
     # Show ui
     if not silent:
@@ -72,7 +77,7 @@ def oc_requests(server_base_url, headers, api_map, api_name, url_params=None, fi
             try:
                 return json.loads(response.text)
             except Exception as e:
-                sync_info(logs, 'Response has invalid format %s. Please sync this with opencart again later!'%response, stop=stop, silent=silent, error=True)
+                sync_info(logs, 'Response has invalid format %s. Please sync this with opencart again later!'%response.text, stop=stop, silent=silent, error=True)
 
     except requests.ConnectionError:
         sync_info(logs, 'Cannot connect to Opencart Site. Please sync this with opencart again later!', stop=stop, silent=silent, error=True)

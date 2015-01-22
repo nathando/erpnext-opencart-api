@@ -26,6 +26,18 @@ doc_events = {
 	"Item Group": {
 		"validate": "opencart_api.item_groups.oc_validate_group",
 		"on_trash": "opencart_api.item_groups.oc_delete_group"
+	},
+	"Purchase Receipt": {
+		"on_submit": "opencart_api.events.oc_pr_submitted",
+		"on_cancel": "opencart_api.events.oc_pr_canceled"
+	},
+	"Delivery Note": {
+		"on_submit": "opencart_api.events.oc_dn_submitted",
+		"on_cancel": "opencart_api.events.oc_dn_canceled"
+	},
+	"Stock Entry": {
+		"on_submit": "opencart_api.events.oc_se_changed",
+		"on_cancel": "opencart_api.events.oc_se_changed"
 	}
 }
 

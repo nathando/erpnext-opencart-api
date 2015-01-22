@@ -134,7 +134,6 @@ cur_frm.cscript.sync_with_oc_site = function(doc, dt, dn) {
         callback: function(data) {
             if (data && data.message) {
                 print_sync_log_cat(data.message, true);
-                console.log(data.message);
             }
         }
     });
