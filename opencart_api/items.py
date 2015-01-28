@@ -113,7 +113,7 @@ def sync_item_image_handle (doc, site_doc, api_map, headers, image_path=None):
 
     # Push image onto oc server
     res = oc_requests(site_doc.get('server_base_url'), headers, api_map, 'Product Image', \
-        file_path=file_path, url_params={'id': doc.get(OC_PROD_ID)}, throw_error=True)
+        file_path=file_path, url_params={'id': doc.get(OC_PROD_ID)}, stop=True)
     if res:
         if (res.get('success')):
             doc.update({'last_sync_image': datetime.now()})

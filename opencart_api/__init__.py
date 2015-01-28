@@ -166,7 +166,7 @@ def logout():
 #     data = frappe.get_list('Item', filters=filters, fields=fields)
 #     return data
 
-
+# Return the current quantity for item
 @frappe.whitelist(allow_guest=True)
 @authenticated_api
 @get_only
@@ -185,3 +185,33 @@ def get_current_item_qty(config, site_doc):
     if (item.get('opencart_site')!=site_doc.get('name')):
         return {"status": -2, "error": "Mismatched opencart site user"}
     return get_item_qty(item)
+
+# Return a list of current quantity based on given ids
+@frappe.whitelist(allow_guest=True)
+@authenticated_api
+@get_only
+@oc_api
+def get_current_multi_item_qty(config, site_doc):
+    ''' Get all items are root group and its descendant. Sync with Opencart DB '''
+    # Validate
+    ids = frappe.local.form_dict.get('ids')
+    if not ids:
+        return {"status": -1, "error": "Missing compulsory parameter 'ids'"}
+
+    results = {}
+    for prod_id in ids.split(','):
+        # Get Item
+        results[prod_id] = 0
+        try:
+            item = frappe.get_doc("Item", {'oc_product_id': prod_id})
+        except:
+            pass
+        if not item:
+            # Log ?
+            continue
+        # Compare Item's Opencart Site with the Opencart Site that this user tight to
+        if (item.get('opencart_site')!=site_doc.get('name')):
+            # Log ?
+            continue
+        results[prod_id] = get_item_qty(item)
+    return results

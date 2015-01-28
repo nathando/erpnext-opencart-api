@@ -53,7 +53,8 @@ def get_item_qty_by_name(doc_name):
     item = frappe.get_doc("Item", doc_name)
     return get_item_qty(item)
 
-# TODO: Write test to make sure this function is correct
+# TODO: Write test to make sure this function is correct. Note: current query all transaction.
+# This can create overhead time.
 def get_item_qty(item):
     # Query stock ledger to get qty
     item_ledgers = frappe.db.sql("""select item_code, warehouse, posting_date, actual_qty, valuation_rate, \
@@ -62,7 +63,7 @@ def get_item_qty(item):
         where docstatus < 2 and item_code = '%s' order by posting_date, posting_time, name""" \
         %item.get('item_code'), as_dict=1)
 
-    # Calculate the qty
+    # Calculate the qty based purely on stock transaction record
     bal_qty = 0
     for d in item_ledgers:
         if d.voucher_type == "Stock Reconciliation":
@@ -70,4 +71,16 @@ def get_item_qty(item):
         else:
             qty_diff = flt(d.actual_qty)
         bal_qty += qty_diff
-    return bal_qty
+
+    # Adjust this by Sales Order that've been confirmed but not completely delivered
+    sales_order_items = frappe.db.sql("""select * from `tabSales Order Item` where item_code = '%s' \
+        and parent in (select name from `tabSales Order` \
+        where docstatus < 2 and \
+        (per_delivered is NULL or per_delivered != 100))"""%item.get('item_code'), as_dict=1)
+    for so_item in sales_order_items:
+        bal_qty -= flt(so_item.get('qty'))
+        dn_items = frappe.get_list("Delivery Note Item", {'docstatus': 1, 'prevdoc_detail_docname': so_item.get('name')}, ['name', 'qty'])
+        if (len(dn_items)>0):
+            for dn_item in dn_items:
+                 bal_qty += flt(dn_item.get('qty'))
+    return len(sales_order_items) if bal_qty!=0 else "0"
